@@ -1,139 +1,182 @@
 # 🎬 PS Moviz Hut
 
-A Neo-Brutalism styled movie fetcher web application with chat-style UI.
+> A Neo-Brutalism chat-style Tamil movie finder — powered by Moviesda (moviesda32.com)
 
-## Features
-
-- **Chat-style interface** — type a movie name and get results as messages
-- **Multiple sources** — Tamil (Moviesda), Tamil Dubbed (Isaidub), Global (PrimeShows + Corsflix)
-- **Embedded player** — watch movies inside the app with HLS + custom controls
-- **Download manager** — pick quality (480p / 720p / 1080p) and download
-- **Intro animation** — branded splash screen on load
-- **Auto-fallback** — Global automatically switches between PrimeShows and Corsflix
+![PS Moviz Hut](public/assets/logo.png)
 
 ---
 
-## File Structure
+## 📋 Features
+
+- 🎨 **Neo-Brutalism UI** — Purple + Red + Black, bold & high-contrast
+- 💬 **Chat Interface** — Type a movie name, get results instantly
+- 🎬 **Intro Animation** — Your custom intro video plays on load
+- 🔍 **Full-Database Search** — Crawls all year categories (2012–2026) & pagination tabs
+- 🖼️ **Movie Cards** — Poster, title, year for each result
+- ▶️ **Embedded Player** — Watch online without leaving the app
+- 📥 **Download Links** — 480p, 720p, 1080p quality selection
+- 📱 **Responsive** — Works on mobile, tablet, and desktop
+
+---
+
+## 🗂️ File Structure
 
 ```
 ps-moviz-hut/
 ├── api/
-│   └── index.py        # Flask backend — all scrapers + API routes
+│   └── index.py          # Flask backend — scraper + API routes
 ├── public/
-│   ├── index.html      # Full frontend (HTML + CSS + JS, single file)
-│   └── logo.png        # App logo
-├── vercel.json         # Vercel deployment configuration
-├── requirements.txt    # Python dependencies
-└── README.md
+│   ├── index.html        # Main HTML shell (chat UI)
+│   ├── style.css         # Neo-Brutalism stylesheet
+│   ├── app.js            # Frontend logic (search, player, modal)
+│   └── assets/
+│       ├── intro.mp4     # Intro animation video
+│       └── logo.png      # PS Moviz Hut logo
+├── vercel.json           # Vercel deployment config
+├── requirements.txt      # Python dependencies
+└── README.md             # This file
 ```
 
 ---
 
-## Local Development
-
-### Requirements
-- Python 3.9+
-- pip
-
-### Setup
-
-```bash
-# 1. Clone / unzip the project
-cd ps-moviz-hut
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Run the Flask server
-cd api
-python index.py
-```
-
-The app runs at `http://localhost:5000`.
-
-> The Flask app serves `../public/index.html` as the root (`/`) and all API routes under `/api/*`.
-
----
-
-## Vercel Deployment
+## ⚙️ Local Setup
 
 ### Prerequisites
-- A [Vercel](https://vercel.com) account
-- [Vercel CLI](https://vercel.com/docs/cli) installed: `npm i -g vercel`
+- Python 3.9+
+- pip
+- Node.js (optional, for Vercel CLI)
 
-### Steps
+### Install & Run
 
 ```bash
-# 1. Login to Vercel
+# 1. Clone / download the project
+cd ps-moviz-hut
+
+# 2. Install Python dependencies
+pip install -r requirements.txt
+
+# 3. Run the backend
+cd api
+python index.py
+# → Running on http://localhost:5000
+
+# 4. Open browser → http://localhost:5000
+```
+
+---
+
+## 🚀 Deploy to Vercel
+
+### Method 1: Vercel CLI (recommended)
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Login
 vercel login
 
-# 2. From the project root
+# Deploy from project root
 cd ps-moviz-hut
 vercel
 
-# 3. Follow prompts:
-#    - Link to existing project? No
-#    - Project name: ps-moviz-hut
-#    - Override settings? No
-
-# 4. Deploy to production
+# Follow prompts — select your team/account
+# First deploy = preview URL
+# Production deploy:
 vercel --prod
 ```
 
-Alternatively, push to GitHub and import the repo in the Vercel dashboard.
+### Method 2: GitHub + Vercel Dashboard
 
-### Important Vercel Notes
+1. Push code to a GitHub repository
+2. Go to [vercel.com](https://vercel.com) → **New Project**
+3. Import your GitHub repo
+4. **Framework Preset:** Other
+5. **Root Directory:** `ps-moviz-hut` (or leave blank if it's the root)
+6. Click **Deploy**
 
-- The `vercel.json` routes `/api/*` to the Flask serverless function
-- Static files in `public/` are served directly by Vercel's CDN
-- Python runtime uses `@vercel/python` — no extra config needed
-- Serverless function timeout: 10s (free tier). Heavy scraping may hit this limit.
-
----
-
-## API Reference
-
-| Endpoint | Params | Description |
-|----------|--------|-------------|
-| `GET /api/search` | `q`, `source` | Search movies (`source`: tamil / dubbed / global) |
-| `GET /api/links` | `url`, `source` | Fetch watch + download links for a movie page |
-| `GET /api/proxy` | `url` | Proxy a video stream (avoids CORS) |
-| `GET /api/health` | — | Health check |
+### Vercel Environment (auto-detected)
+- Python runtime via `@vercel/python`
+- Static files served from `public/`
+- API routes handled by `api/index.py`
 
 ---
 
-## Usage Guide
+## 🧭 How It Works
 
-1. **Open the app** → watch the intro animation
-2. **Choose a source** using the header buttons:
-   - **Tamil** → Tamil movies from Moviesda
-   - **Dubbed** → Tamil dubbed movies from Isaidub
-   - **Global** → International movies from PrimeShows (Corsflix fallback)
-3. **Type a movie name** in the input bar and press Enter or click Send
-4. **Browse results** — each card shows title, year, source
-5. **Watch** → opens embedded player with play/pause, volume, fullscreen, quality selection
-6. **Download** → pick a quality (480p / 720p / 1080p) and download directly
+### Scraping Flow
+
+```
+User types "Leo"
+        ↓
+Backend searches moviesda32.com/category/tamil-20XX-movies/
+        ↓
+Iterates page 1 → 2 → 3 ... (up to 7 pages per year)
+        ↓
+Extracts movie cards: title, poster, URL
+        ↓
+Fuzzy-matches query against titles
+        ↓
+Returns matching results to frontend
+        ↓
+User clicks a movie card → fetches detail page
+        ↓
+Extracts: poster, year, description, watch links, download links
+        ↓
+Displays in modal with embedded player or download buttons
+```
+
+### API Endpoints
+
+| Endpoint | Method | Params | Description |
+|----------|--------|--------|-------------|
+| `/api/search` | GET | `q=<query>` | Search movies across all categories |
+| `/api/movie` | GET | `url=<moviesda_url>` | Fetch full movie details |
+| `/api/proxy` | GET | `url=<stream_url>` | Proxy streaming content (CORS bypass) |
 
 ---
 
-## Tech Stack
+## 🎮 Usage Guide
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | HTML5, CSS3, Vanilla JavaScript |
-| Icons | Font Awesome 6 |
-| Video | HLS.js (adaptive streaming) + native HTML5 video |
-| Backend | Python (Flask) |
-| Scraping | requests + BeautifulSoup4 |
-| Hosting | Vercel (Python serverless + static CDN) |
+1. **Open** the app → intro animation plays (or click **SKIP**)
+2. **Chat loads** with quick-search chips (Leo, Jailer, Vikram, Kanguva)
+3. **Type** a movie name in the text box → hit **SEND** or press **Enter**
+4. **Results appear** as movie cards with poster + year
+5. **Click a card** → modal opens with:
+   - Poster, title, year, description
+   - **Watch Online** → opens embedded player inside PS Moviz Hut
+   - **Download** → quality buttons (480p, 720p, 1080p)
+6. **Player controls:** Play/Pause, Volume, Seek bar, Fullscreen, Quality selector
+7. **Sidebar** → filter by year category (2026, 2025, 2024...) or Web Series
 
 ---
 
-## Troubleshooting
+## 🛠️ Customization
 
-| Problem | Solution |
-|---------|----------|
-| No results found | Try a different source or check spelling |
-| Video won't play | The link may require CORS proxy — the app auto-retries |
-| Deployment error | Ensure `requirements.txt` is present and has no extras |
-| Timeout on Vercel | Source site may be slow — try again or use a different source |
+### Add More Sources
+Edit `YEAR_CATEGORIES` in `api/index.py` to add more category slugs from Moviesda.
+
+### Change Theme Colors
+Edit CSS variables in `public/style.css`:
+```css
+:root {
+  --purple: #7B2FBE;
+  --red:    #E63946;
+  --black:  #0A0A0A;
+}
+```
+
+### Swap Intro Video
+Replace `public/assets/intro.mp4` with your new video file.
+
+---
+
+## ⚠️ Disclaimer
+
+PS Moviz Hut is a **search/aggregation tool** that indexes publicly available information from Moviesda. It does not host any video content. All streaming and download links are sourced directly from third-party sites. Use responsibly and respect copyright laws in your region.
+
+---
+
+## 📄 License
+
+MIT License — Free to use, modify, and distribute.

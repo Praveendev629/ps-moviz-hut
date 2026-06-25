@@ -1,7 +1,27 @@
 {
-  "functions": {
-    "src/app/api/search/route.ts": { "maxDuration": 60 },
-    "src/app/api/movie/route.ts": { "maxDuration": 60 },
-    "src/app/api/proxy/route.ts": { "maxDuration": 30 }
-  }
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/logo.png",
+      "dest": "/public/logo.png"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
+    }
+  ]
 }

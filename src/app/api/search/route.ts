@@ -15,20 +15,19 @@ export async function POST(req: NextRequest) {
     }
 
     const trimmedQuery = query.trim()
-    let movies = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let movies: any[] = []
 
     if (provider === 'tamil') {
       movies = await searchMoviesDA(trimmedQuery)
     } else if (provider === 'dubbed') {
       movies = await searchIsaiDub(trimmedQuery)
     } else {
-      // Global: try CorsFlix first, fall back to PrimeShows
       movies = await searchCorsFlix(trimmedQuery)
       if (!movies || movies.length === 0) {
         console.log('CorsFlix returned no results, falling back to PrimeShows')
         movies = await searchPrimeShows(trimmedQuery)
-        // mark fallback provider
-        movies = movies.map((m: { provider: string }) => ({ ...m, provider: 'global' }))
+        movies = movies.map((m) => ({ ...m, provider: 'global' }))
       }
     }
 

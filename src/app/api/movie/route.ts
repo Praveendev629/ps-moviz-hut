@@ -6,6 +6,24 @@ import { getPrimeShowsLinks } from '@/lib/scrapers/primeshows'
 
 export const maxDuration = 60
 
+interface WatchLink {
+  quality: string
+  url: string
+  type: 'embed' | 'direct'
+}
+
+interface DownloadLink {
+  quality: string
+  url: string
+  size?: string
+}
+
+interface MovieLinks {
+  watchLinks: WatchLink[]
+  downloadLinks: DownloadLink[]
+  description: string
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { movieUrl, provider } = await req.json()
@@ -14,14 +32,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'movieUrl is required' }, { status: 400 })
     }
 
-    let result = { watchLinks: [], downloadLinks: [], description: '' }
+    let result: MovieLinks = { watchLinks: [], downloadLinks: [], description: '' }
 
     if (provider === 'tamil') {
       result = await getMoviesDaLinks(movieUrl)
     } else if (provider === 'dubbed') {
       result = await getIsaiDubLinks(movieUrl)
     } else {
-      // Try CorsFlix first, then PrimeShows
       result = await getCorsFLixLinks(movieUrl)
       if (!result.watchLinks?.length && !result.downloadLinks?.length) {
         const primeUrl = movieUrl.replace('watch.corsflix.dpdns.org', 'primeshows.uk')

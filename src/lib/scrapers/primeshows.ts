@@ -1,11 +1,11 @@
 import * as cheerio from 'cheerio'
 import { fetchPage, cleanTitle, extractYear, extractQuality, extractSize, absoluteUrl } from './utils'
-import type { Movie } from '@/app/page'
+import type { MovieResult, MovieLinks } from '../types'
 
 const BASE = 'https://primeshows.uk'
 
-export async function searchPrimeShows(query: string): Promise<Movie[]> {
-  const movies: Movie[] = []
+export async function searchPrimeShows(query: string): Promise<MovieResult[]> {
+  const movies: MovieResult[] = []
 
   const searchUrls = [
     `${BASE}/?s=${encodeURIComponent(query)}`,
@@ -57,9 +57,9 @@ export async function searchPrimeShows(query: string): Promise<Movie[]> {
   return movies
 }
 
-export async function getPrimeShowsLinks(movieUrl: string) {
-  const watchLinks: { quality: string; url: string; type: 'embed' | 'direct' }[] = []
-  const downloadLinks: { quality: string; url: string; size?: string }[] = []
+export async function getPrimeShowsLinks(movieUrl: string): Promise<MovieLinks> {
+  const watchLinks: MovieLinks['watchLinks'] = []
+  const downloadLinks: MovieLinks['downloadLinks'] = []
   let description = ''
 
   try {

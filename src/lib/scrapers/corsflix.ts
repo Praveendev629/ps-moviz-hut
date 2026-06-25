@@ -1,11 +1,11 @@
 import * as cheerio from 'cheerio'
 import { fetchPage, cleanTitle, extractYear, absoluteUrl } from './utils'
-import type { Movie } from '@/app/page'
+import type { MovieResult, MovieLinks } from '../types'
 
 const BASE = 'https://watch.corsflix.dpdns.org'
 
-export async function searchCorsFlix(query: string): Promise<Movie[]> {
-  const movies: Movie[] = []
+export async function searchCorsFlix(query: string): Promise<MovieResult[]> {
+  const movies: MovieResult[] = []
 
   const searchUrls = [
     `${BASE}/search?q=${encodeURIComponent(query)}`,
@@ -26,11 +26,10 @@ export async function searchCorsFlix(query: string): Promise<Movie[]> {
   try {
     const $ = cheerio.load(html)
 
-    // Try JSON API response
     if (html.trim().startsWith('{') || html.trim().startsWith('[')) {
-      const data = JSON.parse(html)
-      const items = data.results || data.movies || data.data || (Array.isArray(data) ? data : [])
-      items.slice(0, 9).forEach((item: Record<string, unknown>) => {
+      const data = JSON.parse(html) as Record<string, unknown>
+      const items = (data.results || data.movies || data.data || (Array.isArray(data) ? data : [])) as Record<string, unknown>[]
+      items.slice(0, 9).forEach((item) => {
         movies.push({
           id: String(item.id || Math.random()),
           title: String(item.title || item.name || ''),
@@ -44,7 +43,6 @@ export async function searchCorsFlix(query: string): Promise<Movie[]> {
       return movies
     }
 
-    // HTML scraping
     const selectors = ['.film-poster', '.movie-card', '.flw-item', 'article', '.item', '.movie']
     for (const sel of selectors) {
       const found = $(sel)
@@ -75,9 +73,9 @@ export async function searchCorsFlix(query: string): Promise<Movie[]> {
   return movies
 }
 
-export async function getCorsFLixLinks(movieUrl: string) {
-  const watchLinks: { quality: string; url: string; type: 'embed' | 'direct' }[] = []
-  const downloadLinks: { quality: string; url: string; size?: string }[] = []
+export async function getCorsFLixLinks(movieUrl: string): Promise<MovieLinks> {
+  const watchLinks: MovieLinks['watchLinks'] = []
+  const downloadLinks: MovieLinks['downloadLinks'] = []
   let description = ''
 
   try {

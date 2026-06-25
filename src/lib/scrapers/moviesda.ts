@@ -1,11 +1,11 @@
 import * as cheerio from 'cheerio'
 import { fetchPage, extractQuality, extractYear, extractSize, cleanTitle, absoluteUrl } from './utils'
-import type { Movie } from '@/app/page'
+import type { MovieResult, MovieLinks } from '../types'
 
 const BASE = 'https://moviesda32.com'
 
-export async function searchMoviesDA(query: string): Promise<Movie[]> {
-  const movies: Movie[] = []
+export async function searchMoviesDA(query: string): Promise<MovieResult[]> {
+  const movies: MovieResult[] = []
 
   try {
     const searchUrls = [
@@ -17,10 +17,8 @@ export async function searchMoviesDA(query: string): Promise<Movie[]> {
     for (const url of searchUrls) {
       try {
         html = await fetchPage(url, BASE)
-        break
-      } catch (_e) {
-        continue
-      }
+        if (html && html.length > 500) break
+      } catch (_e) { continue }
     }
 
     if (!html) return movies
@@ -28,32 +26,25 @@ export async function searchMoviesDA(query: string): Promise<Movie[]> {
     const $ = cheerio.load(html)
 
     const resultSelectors = [
-      'article.post',
-      '.post-item',
-      '.movie-card',
-      'article',
-      '.post',
-      '.entry',
+      'article.post', '.post-item', '.movie-card', 'article', '.post', '.entry',
     ]
 
-    let results: cheerio.Cheerio<cheerio.Element> | null = null
+    let results: cheerio.Cheerio<cheerio.AnyNode> | null = null
     for (const sel of resultSelectors) {
       const found = $(sel)
       if (found.length > 0) { results = found; break }
     }
 
     if (!results || results.length === 0) {
-      // Try grid/list layout
       $('a[href*="/20"]').each((_, el) => {
         const href = $(el).attr('href') || ''
         const title = $(el).find('img').attr('alt') || $(el).text().trim()
         const poster = $(el).find('img').attr('src') || $(el).find('img').attr('data-src') || ''
         if (title && href && !href.includes('category') && !href.includes('tag')) {
-          const year = extractYear(href + title)
           movies.push({
             id: Math.random().toString(36).substring(2),
             title: cleanTitle(title),
-            year,
+            year: extractYear(href + title),
             poster: absoluteUrl(poster, BASE),
             movieUrl: absoluteUrl(href, BASE),
             provider: 'tamil',
@@ -71,16 +62,12 @@ export async function searchMoviesDA(query: string): Promise<Movie[]> {
         $(el).find('img').attr('data-src') ||
         $(el).find('img').attr('data-lazy-src') || ''
       if (poster.includes('data:image')) poster = ''
-
       if (!title || !link) return
-
-      const fullText = $(el).text()
-      const year = extractYear(link + fullText)
 
       movies.push({
         id: Math.random().toString(36).substring(2),
         title: cleanTitle(title),
-        year,
+        year: extractYear(link + $(el).text()),
         poster: absoluteUrl(poster, BASE),
         movieUrl: absoluteUrl(link, BASE),
         provider: 'tamil',
@@ -94,19 +81,18 @@ export async function searchMoviesDA(query: string): Promise<Movie[]> {
   return movies
 }
 
-export async function getMoviesDaLinks(movieUrl: string) {
-  const watchLinks: { quality: string; url: string; type: 'embed' | 'direct' }[] = []
-  const downloadLinks: { quality: string; url: string; size?: string }[] = []
+export async function getMoviesDaLinks(movieUrl: string): Promise<MovieLinks> {
+  const watchLinks: MovieLinks['watchLinks'] = []
+  const downloadLinks: MovieLinks['downloadLinks'] = []
+  let description = ''
 
   try {
     const html = await fetchPage(movieUrl, BASE)
     const $ = cheerio.load(html)
 
-    // Get description
-    const description = $('.entry-content p').first().text().trim() ||
+    description = $('.entry-content p').first().text().trim() ||
       $('meta[name="description"]').attr('content') || ''
 
-    // Find all links in content
     $('.entry-content a, .post-content a, article a').each((_, el) => {
       const href = $(el).attr('href') || ''
       const text = $(el).text().trim()
@@ -117,21 +103,14 @@ export async function getMoviesDaLinks(movieUrl: string) {
       const quality = extractQuality(combinedText)
       const size = extractSize(combinedText)
 
-      const isDownload = href.includes('drive.google') ||
-        href.includes('mega.nz') ||
-        href.includes('telegram') ||
-        href.includes('mediafire') ||
-        href.includes('1fichier') ||
-        href.includes('uptobox') ||
-        href.includes('dropbox') ||
-        text.toLowerCase().includes('download')
+      const isDownload = href.includes('drive.google') || href.includes('mega.nz') ||
+        href.includes('telegram') || href.includes('mediafire') ||
+        href.includes('1fichier') || href.includes('uptobox') ||
+        href.includes('dropbox') || text.toLowerCase().includes('download')
 
-      const isWatch = href.includes('embed') ||
-        href.includes('iframe') ||
-        href.includes('player') ||
-        href.includes('watch') ||
-        text.toLowerCase().includes('watch') ||
-        text.toLowerCase().includes('online')
+      const isWatch = href.includes('embed') || href.includes('iframe') ||
+        href.includes('player') || href.includes('watch') ||
+        text.toLowerCase().includes('watch') || text.toLowerCase().includes('online')
 
       if (isDownload) {
         downloadLinks.push({ quality, url: href, size })
@@ -140,17 +119,15 @@ export async function getMoviesDaLinks(movieUrl: string) {
       }
     })
 
-    // Look for iframes (embedded players)
     $('iframe').each((_, el) => {
       const src = $(el).attr('src') || $(el).attr('data-src') || ''
       if (src && !src.includes('google.com/maps')) {
         watchLinks.push({ quality: 'HD', url: src, type: 'embed' })
       }
     })
-
-    return { watchLinks, downloadLinks, description }
   } catch (e) {
     console.error('MoviesDa links error:', e)
-    return { watchLinks, downloadLinks, description: '' }
   }
+
+  return { watchLinks, downloadLinks, description }
 }

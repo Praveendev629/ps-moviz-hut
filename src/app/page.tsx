@@ -8,9 +8,9 @@ import MovieCard from '@/components/MovieCard'
 import VideoPlayer from '@/components/VideoPlayer'
 import DownloadPanel from '@/components/DownloadPanel'
 
-export type Provider = 'tamil' | 'dubbed' | 'global'
+type Provider = 'tamil' | 'dubbed' | 'global'
 
-export interface Movie {
+interface Movie {
   id: string
   title: string
   year: string

@@ -1,11 +1,11 @@
 import * as cheerio from 'cheerio'
 import { fetchPage, extractQuality, extractYear, extractSize, cleanTitle, absoluteUrl } from './utils'
-import type { Movie } from '@/app/page'
+import type { MovieResult, MovieLinks } from '../types'
 
 const BASE = 'https://isaidub.ceo'
 
-export async function searchIsaiDub(query: string): Promise<Movie[]> {
-  const movies: Movie[] = []
+export async function searchIsaiDub(query: string): Promise<MovieResult[]> {
+  const movies: MovieResult[] = []
 
   try {
     const searchUrls = [
@@ -17,7 +17,7 @@ export async function searchIsaiDub(query: string): Promise<Movie[]> {
     for (const url of searchUrls) {
       try {
         html = await fetchPage(url, BASE)
-        if (html) break
+        if (html && html.length > 500) break
       } catch (_e) { continue }
     }
 
@@ -26,7 +26,7 @@ export async function searchIsaiDub(query: string): Promise<Movie[]> {
     const $ = cheerio.load(html)
 
     const articleSels = ['article.post', 'article', '.post', '.movie-item', '.entry']
-    let items: cheerio.Cheerio<cheerio.Element> | null = null
+    let items: cheerio.Cheerio<cheerio.AnyNode> | null = null
     for (const sel of articleSels) {
       const found = $(sel)
       if (found.length) { items = found; break }
@@ -80,9 +80,9 @@ export async function searchIsaiDub(query: string): Promise<Movie[]> {
   return movies
 }
 
-export async function getIsaiDubLinks(movieUrl: string) {
-  const watchLinks: { quality: string; url: string; type: 'embed' | 'direct' }[] = []
-  const downloadLinks: { quality: string; url: string; size?: string }[] = []
+export async function getIsaiDubLinks(movieUrl: string): Promise<MovieLinks> {
+  const watchLinks: MovieLinks['watchLinks'] = []
+  const downloadLinks: MovieLinks['downloadLinks'] = []
   let description = ''
 
   try {
@@ -103,8 +103,8 @@ export async function getIsaiDubLinks(movieUrl: string) {
       if (!href || href === '#') return
       const quality = extractQuality(text + ' ' + href)
       const size = extractSize(text)
-      if (href.includes('drive.google') || href.includes('mega') || href.includes('mediafire') ||
-          text.toLowerCase().includes('download')) {
+      if (href.includes('drive.google') || href.includes('mega') ||
+          href.includes('mediafire') || text.toLowerCase().includes('download')) {
         downloadLinks.push({ quality, url: href, size })
       } else if (text.toLowerCase().includes('watch') || href.includes('embed')) {
         watchLinks.push({ quality, url: href, type: 'embed' })

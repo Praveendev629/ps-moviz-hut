@@ -1,16 +1,18 @@
 """
 PS Moviz Hut - Backend API
-Scrapes moviesda32.com for Tamil movies
+Scrapes moviesda32.com for Tamil movies/series using concurrent, recursive traversal.
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import re
 import os
 import time
+import json
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)
@@ -25,102 +27,93 @@ HEADERS = {
     "Referer": "https://moviesda32.com/"
 }
 
-# Year categories available on moviesda32.com
-YEAR_CATEGORIES = [
+CATEGORIES = [
     "tamil-2026-movies", "tamil-2025-movies", "tamil-2024-movies",
     "tamil-2023-movies", "tamil-2022-movies", "tamil-2021-movies",
     "tamil-2020-movies", "tamil-2019-movies", "tamil-2018-movies",
     "tamil-2017-movies", "tamil-2016-movies", "tamil-2015-movies",
-    "tamil-2012-movies", "latest-tamil-web-series", "tamil-dubbed-movies"
+    "tamil-2012-movies", "tamil-web-series-download", "tamil-dubbed-movies"
 ]
 
-def fetch_page(url, timeout=15):
-    """Fetch a page with error handling."""
+# Load compiled movies database
+MOVIES_CACHE = []
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'movies_db.json')
+
+if os.path.exists(DB_PATH):
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        with open(DB_PATH, 'r', encoding='utf-8') as f:
+            MOVIES_CACHE = json.load(f)
+        print(f"Successfully loaded {len(MOVIES_CACHE)} movies from movies_db.json")
+    except Exception as e:
+        print(f"Error loading movies_db.json: {e}")
+else:
+    print("Warning: movies_db.json not found! Run build_db.py first.")
+
+def fetch_page_movies(category, page_num):
+    """Scrape a listing page for movies."""
+    if page_num == 1:
+        url = f"{BASE_URL}/{category}/"
+    else:
+        url = f"{BASE_URL}/{category}/?page={page_num}"
+        
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=6)
+        if resp.status_code != 200:
+            return []
+            
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        movies = []
+        
+        divs = soup.find_all('div', class_='f')
+        for div in divs:
+            a = div.find('a', href=True)
+            if a:
+                href = a['href']
+                text = a.get_text(strip=True)
+                
+                # Check for movie or web series links
+                if href.endswith('-movie/') or href.endswith('-web-series/') or href.endswith('-dubbed-movie/') or href.endswith('-original/'):
+                    movies.append({
+                        'title': text,
+                        'link': urllib.parse.urljoin(BASE_URL, href),
+                        'category': category
+                    })
+        return movies
+    except Exception:
+        return []
+
+def fetch_soup_page(url):
+    """Fetch and parse a webpage."""
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=8)
         if resp.status_code == 200:
             return BeautifulSoup(resp.text, 'html.parser')
-        return None
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return None
+        print(f"Error fetching detail page {url}: {e}")
+    return None
 
-def get_max_pages(category_url):
-    """Get the number of pagination pages for a category."""
-    soup = fetch_page(category_url)
-    if not soup:
-        return 1
-    # Look for pagination
-    pagination = soup.find('div', class_=re.compile(r'nav|pagination|page', re.I))
-    if not pagination:
-        pagination = soup.find('a', string=re.compile(r'Last|»|›'))
-    
-    max_page = 1
-    # Try to find page links
-    page_links = soup.find_all('a', href=re.compile(r'/page/\d+'))
-    for link in page_links:
-        m = re.search(r'/page/(\d+)', link.get('href', ''))
-        if m:
-            max_page = max(max_page, int(m.group(1)))
-    return max_page
+def detect_quality(text, href):
+    """Detect movie quality string from link text or URL path."""
+    combined = (text + " " + href).lower()
+    if '1080' in combined:
+        return '1080p'
+    elif '720' in combined:
+        return '720p'
+    elif '480' in combined:
+        return '480p'
+    elif '360' in combined:
+        return '360p'
+    elif '4k' in combined or '2160' in combined:
+        return '4K UHD'
+    return 'HD'
 
-def extract_movies_from_page(soup):
-    """Extract movie cards from a listing page."""
-    movies = []
-    if not soup:
-        return movies
+def crawl_movie_details(start_url):
+    """Recursively crawl the subpages of a movie to find final streaming/download URLs."""
+    visited = set()
+    download_links = {}
+    watch_links = []
     
-    # Common patterns for movie listing pages
-    # Look for article/post items
-    items = soup.find_all(['article', 'div'], class_=re.compile(r'post|movie|item|entry', re.I))
-    
-    if not items:
-        # Try finding links with images
-        items = soup.find_all('div', class_=re.compile(r'thumbnail|card|movie-thumb', re.I))
-    
-    for item in items:
-        try:
-            # Get title
-            title_tag = item.find(['h2', 'h3', 'h1', 'a'], class_=re.compile(r'title|entry-title|post-title', re.I))
-            if not title_tag:
-                title_tag = item.find(['h2', 'h3'])
-            if not title_tag:
-                continue
-            
-            title = title_tag.get_text(strip=True)
-            if not title or len(title) < 3:
-                continue
-            
-            # Get link
-            link = None
-            a_tag = title_tag.find('a') or item.find('a')
-            if a_tag:
-                link = a_tag.get('href', '')
-            
-            # Get poster
-            img_tag = item.find('img')
-            poster = ''
-            if img_tag:
-                poster = img_tag.get('src') or img_tag.get('data-src') or img_tag.get('data-lazy-src', '')
-            
-            if title and link:
-                movies.append({
-                    'title': title,
-                    'link': link,
-                    'poster': poster
-                })
-        except Exception:
-            continue
-    
-    return movies
-
-def get_movie_details(movie_url):
-    """Fetch full movie details from its detail page."""
-    soup = fetch_page(movie_url)
-    if not soup:
-        return None
-    
-    details = {
+    movie_details = {
         'title': '',
         'year': '',
         'poster': '',
@@ -129,144 +122,131 @@ def get_movie_details(movie_url):
         'download_links': {}
     }
     
+    # 1. Scrape metadata from first page
+    soup = fetch_soup_page(start_url)
+    if not soup:
+        return None
+        
     # Title
-    title_tag = soup.find(['h1', 'h2'], class_=re.compile(r'title|entry-title', re.I))
-    if not title_tag:
-        title_tag = soup.find('h1')
+    title_tag = soup.find(['h1', 'h2'])
     if title_tag:
-        details['title'] = title_tag.get_text(strip=True)
-    
-    # Poster
-    # Try Open Graph image first
-    og_img = soup.find('meta', property='og:image')
-    if og_img:
-        details['poster'] = og_img.get('content', '')
+        movie_details['title'] = title_tag.get_text(strip=True)
     else:
-        img = soup.find('img', class_=re.compile(r'poster|thumb|feature', re.I))
-        if not img:
-            img = soup.find('img', src=re.compile(r'\.jpg|\.jpeg|\.png|\.webp', re.I))
-        if img:
-            details['poster'] = img.get('src') or img.get('data-src', '')
-    
-    # Year - extract from title or meta or page content
-    year_match = re.search(r'\b(20\d{2})\b', details['title'])
-    if not year_match:
-        # Try page content
-        text_content = soup.get_text()
-        year_match = re.search(r'Year\s*[:\|]\s*(20\d{2})', text_content)
-        if not year_match:
-            year_match = re.search(r'\b(20\d{2})\b', text_content)
+        # Fallback to formatting url slug
+        slug = start_url.rstrip('/').split('/')[-1]
+        movie_details['title'] = slug.replace('-', ' ').title()
+        
+    # Year extraction
+    year_match = re.search(r'\b(20\d{2})\b', movie_details['title'])
     if year_match:
-        details['year'] = year_match.group(1)
-    
-    # Description / One Line
+        movie_details['year'] = year_match.group(1)
+        
+    # Poster image
+    img_tags = soup.find_all('img')
+    for img in img_tags:
+        src = img.get('src', '')
+        alt = img.get('alt', '')
+        # Ignore screenshot images or icons
+        if 'screenshot' not in alt.lower() and ('jpg' in src or 'png' in src or 'jpeg' in src or 'webp' in src):
+            if not src.startswith('/assets/img/'):
+                movie_details['poster'] = urllib.parse.urljoin(start_url, src)
+                break
+                
+    # One line description
     desc_tag = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', property='og:description')
     if desc_tag:
-        details['description'] = desc_tag.get('content', '')
-    if not details['description']:
-        # Try first paragraph
+        movie_details['description'] = desc_tag.get('content', '')
+    else:
         p = soup.find('p')
         if p:
-            details['description'] = p.get_text(strip=True)[:300]
-    
-    # Find all links on page
-    all_links = soup.find_all('a', href=True)
-    
-    download_qualities = {}
-    watch_links = []
-    
-    for link in all_links:
-        href = link.get('href', '')
-        text = link.get_text(strip=True).lower()
-        
-        # Skip navigation links
-        if not href or href == '#' or 'moviesda32.com' in href and '/category/' in href:
-            continue
-        
-        # Watch Online detection
-        if any(kw in text for kw in ['watch online', 'watch now', 'stream', 'online', 'play']):
-            if href.startswith('http'):
-                watch_links.append({'label': link.get_text(strip=True), 'url': href})
-        
-        # Download link detection
-        elif any(kw in text for kw in ['download', '480p', '720p', '1080p', '4k', 'hdrip', 'bluray', 'webrip']):
-            quality = '720p'
-            if '480p' in text or '480p' in href:
-                quality = '480p'
-            elif '1080p' in text or '1080p' in href:
-                quality = '1080p'
-            elif '4k' in text or '2160p' in href:
-                quality = '4K'
-            elif '720p' in text or '720p' in href:
-                quality = '720p'
+            movie_details['description'] = p.get_text(strip=True)[:300]
             
-            if href.startswith('http'):
-                if quality not in download_qualities:
-                    download_qualities[quality] = []
-                download_qualities[quality].append({'label': link.get_text(strip=True), 'url': href})
+    # If no description was extracted, create a generic one
+    if not movie_details['description'] or len(movie_details['description']) < 10:
+        movie_details['description'] = f"Download or stream {movie_details['title']} online in high quality. Select from multiple servers and resolutions below."
         
-        # Check for iframe embed sources (streaming)
-        elif any(ext in href for ext in ['.mp4', '.m3u8', 'embed', 'player', 'video']):
-            watch_links.append({'label': link.get_text(strip=True) or 'Watch Online', 'url': href})
-    
-    # Also check iframes for embedded players
-    iframes = soup.find_all('iframe', src=True)
-    for iframe in iframes:
-        src = iframe.get('src', '')
-        if src and src.startswith('http'):
-            watch_links.append({'label': 'Embedded Player', 'url': src})
-    
-    details['watch_links'] = watch_links
-    details['download_links'] = download_qualities
-    
-    return details
-
-def search_moviesda(query, max_years=3, max_pages_per_year=7):
-    """
-    Search for a movie across all category pages on moviesda32.com.
-    Returns a list of matching movie results.
-    """
-    query_lower = query.lower().strip()
-    results = []
-    seen_urls = set()
-    
-    categories_to_search = YEAR_CATEGORIES
-    
-    for category in categories_to_search:
-        category_url = f"{BASE_URL}/category/{category}/"
+    # 2. Define recursive traversal function
+    def recurse(url, quality=None, depth=0):
+        if url in visited or depth > 5:
+            return
+        visited.add(url)
         
-        # Get max pages (cap at max_pages_per_year for speed)
-        max_pg = min(get_max_pages(category_url), max_pages_per_year)
+        soup_page = fetch_soup_page(url)
+        if not soup_page:
+            return
+            
+        a_tags = soup_page.find_all('a', href=True)
         
-        for page_num in range(1, max_pg + 1):
-            if page_num == 1:
-                page_url = category_url
-            else:
-                page_url = f"{category_url}page/{page_num}/"
+        # Check for media content URLs
+        for a in a_tags:
+            href = a['href']
+            text = a.get_text(strip=True)
+            abs_href = urllib.parse.urljoin(url, href)
             
-            soup = fetch_page(page_url)
-            movies = extract_movies_from_page(soup)
+            # Direct MP4 video download detection
+            if '.mp4' in abs_href.lower() or '.mp4' in text.lower():
+                if 'cdnserver' in abs_href or 'download' in abs_href or abs_href.endswith('.mp4'):
+                    q = quality or detect_quality(text, abs_href)
+                    if q not in download_links:
+                        download_links[q] = []
+                    # Avoid duplicate link insertion
+                    if not any(dl['url'] == abs_href for dl in download_links[q]):
+                        download_links[q].append({
+                            'label': text or f"Server {len(download_links[q])+1}",
+                            'url': abs_href
+                        })
+                        
+            # Streaming (Watch Online) detection
+            if 'onestream' in abs_href or 'play' in abs_href or 'stream' in abs_href or 'embed' in abs_href:
+                if not abs_href.endswith('.css') and not abs_href.endswith('.js') and abs_href != '#':
+                    q = quality or detect_quality(text, abs_href)
+                    label = f"Stream ({q})" if q else (text or f"Server {len(watch_links)+1}")
+                    if not any(wl['url'] == abs_href for wl in watch_links):
+                        watch_links.append({
+                            'label': label,
+                            'url': abs_href,
+                            'quality': q
+                        })
+                        
+        # Traverse down links matching movie structure
+        for a in a_tags:
+            href = a['href']
+            text = a.get_text(strip=True)
+            abs_href = urllib.parse.urljoin(url, href)
             
-            for movie in movies:
-                title = movie['title'].lower()
-                # Fuzzy match: check if query words are in title
-                query_words = query_lower.split()
-                if any(word in title for word in query_words) or query_lower in title:
-                    url = movie['link']
-                    if url and url not in seen_urls:
-                        seen_urls.add(url)
-                        results.append(movie)
+            # Ignore standard UI / site links
+            if abs_href in visited or abs_href == '#' or abs_href == BASE_URL or abs_href == BASE_URL + '/':
+                continue
+            if any(social in abs_href.lower() for social in ['telegram', 'facebook', 'twitter', 'whatsapp']):
+                continue
+            if '/tamil-movies/' in abs_href or '/category/' in abs_href:
+                continue
+                
+            is_subpage = False
+            parsed = urllib.parse.urlparse(abs_href)
+            domain = parsed.netloc
+            path = parsed.path
             
-            # If we found good results, we can stop early
-            if len(results) >= 10:
-                return results
-            
-            time.sleep(0.3)  # Be polite
-        
-        if len(results) >= 5:
-            break
+            if 'moviesda32.com' in domain:
+                if (path.endswith('-movie/') or 
+                    path.endswith('-web-series/') or 
+                    path.endswith('-hd/') or 
+                    '/download/' in path or
+                    path.endswith('-dubbed-movie/') or
+                    path.endswith('-original/')):
+                    is_subpage = True
+            elif any(d in domain for d in ['moviespage.xyz', 'downloadpage.xyz', 'onestream.today']):
+                is_subpage = True
+                
+            if is_subpage:
+                next_q = quality or detect_quality(text, abs_href)
+                recurse(abs_href, next_q, depth + 1)
+                
+    recurse(start_url)
     
-    return results
+    movie_details['download_links'] = download_links
+    movie_details['watch_links'] = watch_links
+    return movie_details
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -277,14 +257,52 @@ def index():
 @app.route('/api/search', methods=['GET'])
 def api_search():
     query = request.args.get('q', '').strip()
+    category = request.args.get('cat', 'all').strip()
+    
     if not query or len(query) < 2:
         return jsonify({'error': 'Please enter a movie name (at least 2 characters).'}), 400
-    
+        
     try:
-        results = search_moviesda(query)
-        if not results:
-            return jsonify({'results': [], 'message': f'No movies found for "{query}" on Moviesda.'})
-        return jsonify({'results': results, 'total': len(results)})
+        query_lower = query.lower()
+        words = query_lower.split()
+        
+        # 1. Instant search on local cached database
+        cached_results = []
+        for m in MOVIES_CACHE:
+            if category != 'all' and m['category'] != category:
+                continue
+            title = m['title'].lower()
+            if query_lower in title or all(w in title for w in words):
+                cached_results.append(m)
+                
+        # 2. Concurrently scrape first 2 pages of relevant categories for real-time additions
+        categories_to_scan = [category] if category != 'all' else CATEGORIES
+        scan_tasks = []
+        for cat in categories_to_scan:
+            scan_tasks.append((cat, 1))
+            scan_tasks.append((cat, 2))
+            
+        live_results = []
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = {executor.submit(fetch_page_movies, cat, p): (cat, p) for cat, p in scan_tasks}
+            for future in as_completed(futures):
+                movies = future.result()
+                for m in movies:
+                    title = m['title'].lower()
+                    if query_lower in title or all(w in title for w in words):
+                        live_results.append(m)
+                        
+        # 3. Merge and deduplicate by movie link
+        combined = []
+        seen = set()
+        for r in live_results + cached_results:
+            link = r['link']
+            if link not in seen:
+                seen.add(link)
+                combined.append(r)
+                
+        # Return merged list
+        return jsonify({'results': combined, 'total': len(combined)})
     except Exception as e:
         return jsonify({'error': f'Search failed: {str(e)}'}), 500
 
@@ -293,34 +311,38 @@ def api_movie():
     url = request.args.get('url', '').strip()
     if not url:
         return jsonify({'error': 'Movie URL is required.'}), 400
-    
-    # Safety check - only allow moviesda32.com URLs
-    if 'moviesda32.com' not in url and 'moviesda' not in url:
-        return jsonify({'error': 'Invalid URL.'}), 400
-    
+        
+    # Security/domain verification
+    allowed_domains = ['moviesda32.com', 'moviesda', 'isaimini']
+    if not any(d in url for d in allowed_domains):
+        return jsonify({'error': 'Invalid movie details URL.'}), 400
+        
     try:
-        details = get_movie_details(url)
+        details = crawl_movie_details(url)
         if not details:
-            return jsonify({'error': 'Could not fetch movie details.'}), 500
+            return jsonify({'error': 'Could not scrape movie details.'}), 500
         return jsonify(details)
     except Exception as e:
-        return jsonify({'error': f'Failed to fetch details: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to crawl details: {str(e)}'}), 500
 
 @app.route('/api/proxy', methods=['GET'])
 def api_proxy():
-    """Proxy streaming content to avoid CORS issues."""
+    """Proxy small requests (e.g. posters/styling) to bypass CORS blocks."""
     url = request.args.get('url', '').strip()
     if not url:
         return jsonify({'error': 'URL required'}), 400
-    
-    # Only proxy from trusted domains
-    allowed_domains = ['moviesda32.com', 'moviesda', 'isaimini']
+        
+    allowed_domains = ['moviesda32.com', 'moviesda', 'isaimini', 'cdnserver']
     if not any(d in url for d in allowed_domains):
         return jsonify({'error': 'Domain not allowed for proxy.'}), 403
-    
+        
     try:
-        resp = requests.get(url, headers=HEADERS, stream=True, timeout=30)
-        from flask import Response
+        resp = requests.get(url, headers=HEADERS, stream=True, timeout=15)
+        # Avoid proxying huge video files through serverless lambda
+        content_length = int(resp.headers.get('Content-Length', 0))
+        if content_length > 10 * 1024 * 1024:  # 10 MB limit
+            return jsonify({'error': 'File too large to proxy. Stream direct link instead.'}), 400
+            
         return Response(
             resp.iter_content(chunk_size=8192),
             content_type=resp.headers.get('Content-Type', 'application/octet-stream'),

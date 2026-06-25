@@ -40,12 +40,12 @@
     <div id="sidebar-label">CATEGORIES</div>
     <nav id="sidebar-nav">
       <button class="nav-btn active" data-cat="all"><i class="fa-solid fa-film"></i> All Tamil</button>
-      <button class="nav-btn" data-cat="2026"><i class="fa-solid fa-star"></i> Tamil 2026</button>
-      <button class="nav-btn" data-cat="2025"><i class="fa-solid fa-calendar"></i> Tamil 2025</button>
-      <button class="nav-btn" data-cat="2024"><i class="fa-solid fa-calendar"></i> Tamil 2024</button>
-      <button class="nav-btn" data-cat="2023"><i class="fa-solid fa-calendar"></i> Tamil 2023</button>
-      <button class="nav-btn" data-cat="series"><i class="fa-solid fa-tv"></i> Web Series</button>
-      <button class="nav-btn" data-cat="dubbed"><i class="fa-solid fa-language"></i> Tamil Dubbed</button>
+      <button class="nav-btn" data-cat="tamil-2026-movies"><i class="fa-solid fa-star"></i> Tamil 2026</button>
+      <button class="nav-btn" data-cat="tamil-2025-movies"><i class="fa-solid fa-calendar"></i> Tamil 2025</button>
+      <button class="nav-btn" data-cat="tamil-2024-movies"><i class="fa-solid fa-calendar"></i> Tamil 2024</button>
+      <button class="nav-btn" data-cat="tamil-2023-movies"><i class="fa-solid fa-calendar"></i> Tamil 2023</button>
+      <button class="nav-btn" data-cat="tamil-web-series-download"><i class="fa-solid fa-tv"></i> Web Series</button>
+      <button class="nav-btn" data-cat="tamil-dubbed-movies"><i class="fa-solid fa-language"></i> Tamil Dubbed</button>
     </nav>
     <div id="sidebar-footer">
       <ion-icon name="shield-checkmark-outline"></ion-icon> Powered by Moviesda
@@ -113,7 +113,7 @@
   <div class="modal-box player-modal-box">
     <button class="modal-close" onclick="closePlayer()"><i class="fa-solid fa-xmark"></i></button>
     <div id="player-container">
-      <video id="main-player" controls>
+      <video id="main-player" playsinline>
         <source id="player-source" src="" type="video/mp4"/>
         Your browser does not support HTML5 video.
       </video>
